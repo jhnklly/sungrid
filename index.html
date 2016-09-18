@@ -4,32 +4,315 @@
     <meta charset='utf-8' />
     <title></title>
     <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
-    <script src="assets/d3.v4.min.js" charset="utf-8"></script>
-    <script src='assets/mapbox-gl.js'></script>
-    <link href='assets/mapbox-gl.css' rel='stylesheet' />
+    <script src="assets/d3.v3.min.js" charset="utf-8"></script>
+
+    <script src="//d3js.org/topojson.v1.min.js"></script>
+    <script src="assets/bounds.js"></script>
+    <script src="assets/cubehelix.js"></script>
+
+    <script src='assets/mapsense.js'></script>
+    <link href='assets/mapsense.css' rel='stylesheet' />
     <style>
         body { margin:0; padding:0; }
-        #map { position:absolute; top:0; bottom:0; width:100%; }
+        #map, #myMap { position:absolute; top:0; bottom:0; width:100%; }
     </style>
 </head>
 <body>
 
-<div id='map'></div>
-<script>
-mapboxgl.accessToken = 'pk.eyJ1Ijoiamhua2xseSIsImEiOiIxLUVDMzVNIn0.MguPdmGTQUvosyLINY3wGQ';
-var map = new mapboxgl.Map({
-    container: 'map', // container id
-    //style: 'mapbox://styles/mapbox/streets-v9',
-    style: 'mapbox://styles/mapbox/light-v9', //stylesheet location
-    center: [-122.25, 37.75], // starting position
-    zoom: 9.5, // starting zoom
-    hash: true
-});
-</script>
+    <div id="myMap"></div>
 
+
+    <script src='http://code.jquery.com/jquery-1.11.0.min.js' type="text/javascript"></script>
+    <script src='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js' type="text/javascript"></script>
+
+<script>
+var A = {};
+A.nowTime = Math.floor((new Date()).getTime() / 1000);
+
+A.sw = [-122.3243053,37.5640288];
+A.ne = [-122.2657,37.7975];
+A.boundsData = [A.sw, A.ne];
+
+var my_key = "key-2d5eacd8b924489c8ed5e8418bd883bc";
+var my_mapquest_key = "dhADqDA6plsQVFuHfPvX2Xb3GrFiCjl5";
+var my_mapzen_search_key = "search-Qih_r38";
+
+var us = [ // reverse of NESW
+    {lon: -124.85, lat: 24.40}, // west, south
+    {lon: -66.88, lat: 49.38} // east, north
+];
+var home = [
+    {lon: -130, lat: 20},
+    {lon: -60, lat: 55}
+];
+var sfba = [
+    {lon: -122.3243053, lat: 37.5640288},
+    {lon: -122.2657, lat: 37.7975}
+];
+
+var result_fields = ['name','county','country','label','layer','confidence'];
+var result_fields_nominatim = ['lat','lon','display_name','class','type','importance'];
+var LINE_COUNT = 0, BUNDLE_SIZE = 6;
+
+var intr = mapsense.interact();
+var arro = mapsense.arrow();
+
+var map = mapsense.map('#myMap') // init the map
+    .extent(sfba) // zoom to bounds, regardless of window size
+    .tileSize({x:256,y:256})
+    /*.add(
+        mapsense.basemap().apiKey(my_key).style("parchment")
+    )*/
+    ;
+
+map.add(mapsense.hash());
+
+var credit = '<a target="_blank" href="https://developer.mapsense.co/tileViewer/?tileset=mapsense.earth">©Mapsense ©OpenStreetMap</a> <a target="_blank" href="http://stamen.com">Stamen Design</a>';
+credit += '<br/>Nominatim Search Courtesy of <a href="http://www.mapquest.com/" target="_blank">MapQuest</a> <img src="http://developer.mapquest.com/content/osm/mq_logo.png">';
+d3.select('.mapsense-attribution').html(credit);
+
+map.interact(false);
+map.add(mapsense.drag());
+map.add(mapsense.wheel());
+map.add(mapsense.dblclick());
+map.add(mapsense.touch());
+mapsense.compass().map(map); //enable shift zoom
+
+var max_extents = [
+    {lon: 180, lat: 90}, // opposites, because we'll expand out
+    {lon: -180, lat: -90}
+];
+
+satellite_url = "http://{S}.mqcdn.com/tiles/1.0.0/sat/{Z}/{X}/{Y}.jpg"; // Credit http://developer.mapquest.com/web/products/open/map
+
+var basemap_url = "http://{S}.basemaps.cartocdn.com/light_all/{Z}/{X}/{Y}.png";
+var basemap_url = "http://{S}.basemaps.cartocdn.com/light_nolabels/{Z}/{X}/{Y}.png";
+
+imagery_layer = mapsense.image()
+    .url(mapsense.url(basemap_url)
+    .hosts(["a", "b", "c", "d"]));
+
+labels_url = "http://stamen-tiles-{S}.a.ssl.fastly.net/toner-labels/{Z}/{X}/{Y}.png";
+labels_url = "http://{S}.basemaps.cartocdn.com/light_only_labels/{Z}/{X}/{Y}.png";
+
+labels_layer = mapsense.image()
+    .url(mapsense.url(labels_url)
+    .hosts(["a", "b", "c", "d"]))
+    ;
+
+map.add(imagery_layer.visible(true).id("imagery_layer"));
+map.add(labels_layer.visible(true).id("labels_layer"));
+d3.select("#labels_layer").attr("style","opacity: 0.5;");
+
+
+//var colorGradient = d3.scaleSequential(d3.interpolateViridis);
+var colorGradient = d3.scale.cubehelix()
+        .range([d3.hsl(270, .75, .35), d3.hsl(70, 1.5, .8)]);
+colorGradient.domain([0, 1]);
+
+d3.json("assets/sfba_land_pts_64_forecast_data.geojson", function(err, data){
+  //processData(A.gjPoints);
+
+  A.gjPoints = data;
+  console.log(A.gjPoints.features);
+
+
+  A.gjLayer = mapsense.geoJson()
+      .features(A.gjPoints.features)
+      .selection(function(d){
+          d.attr("class", "point_highlight")
+          .attr("r", "7")
+          .attr("fill", function(d){
+            console.log(d);
+            return colorGradient(d.properties.sun);
+          })
+      })
+      ;
+  map.add(A.gjLayer);
+
+  //processData2(A.gjPoints);
+  //addPoints();
+});
+
+
+function processData(gj) {
+
+  gj.features.forEach(function(v,i){
+
+    //console.log(v.properties.name);
+    console.log(v.geometry.coordinates);
+    var latLonTime = [v.geometry.coordinates[1], v.geometry.coordinates[0], A.nowTime];
+
+    var url = "assets/proxy.php?url=" + encodeURIComponent( "https://api.forecast.io/forecast/" + APIKEY + "/" + latLonTime.join(",") );
+    d3.json(url, function(err, data){
+      console.log(err);
+      console.log(data.currently.cloudCover);
+      gj.features[i].properties.data = data.currently.cloudCover;
+    });
+
+    sun = 1 - gj.features[i].properties.data;
+    sun = Math.round(sun * 100) / 100
+    gj.features[i].properties.data = sun;
+    gj.features[i].properties["color"] = colorGradient(sun);
+  });
+
+}
+
+
+function printResult(data, location) {
+    var lat, lon, gj_polygon, jsonbb, bbox, gj, bbox_km;
+    var previous_text, new_text, result_line, result_values;
+
+    console.log(data);
+    console.log(data.features[0].geometry.coordinates[1]);
+
+    if (data) {
+
+        if (data.features && data.features[0].geometry.coordinates) {
+            lat = data.features[0].geometry.coordinates[1];
+            lon = data.features[0].geometry.coordinates[0];
+            gj = ll2json(lat,lon,"your place");
+
+            //if ( pt_layer && pt_layer.visible() ) { map.remove(pt_layer); }
+
+            var another_pt_layer = mapsense.geoJson()
+                .features(gj.features)
+                .selection(function(d){
+                    d.attr("class", "point_highlight")
+                    .attr("r", "10")
+                    ;
+                });
+            map.add(another_pt_layer);
+
+
+            previous_text = d3.select('#results').html();
+            result_values = [ data.features[0].geometry.coordinates[1], data.features[0].geometry.coordinates[0]  ];
+            for (var i = 0; i < result_fields.length; i++) {
+                result_values.push( data.features[0].properties[result_fields[i]] );
+            }
+            result_line = "<br/>" + location + '|' + result_values.join('|');
+
+            new_text = previous_text + result_line;
+            d3.select('#results').html(new_text);
+
+        }
+
+
+   } else {
+        //alert("No results found.");
+        //d3.select('#results').text("Not found: " + location);
+        previous_text = d3.select('#results').html();
+        new_text = previous_text + "<br>Not found: " + location;
+        d3.select('#results').html(new_text);
+   }
+}
+
+function zoomBounds(e) {
+    /*map.extent(bounds(e.features)).zoomBy(-.1);*/
+    map.extent(bounds(e.features)).zoom(14);
+}
+
+function ll2json(lat,lon,name){
+    var gj = {type: "FeatureCollection", features: []}; //init a geojson object
+
+    var feature = {
+        type: "Feature",
+        geometry: {type: "Point", "coordinates": [ +lon, +lat ]},
+        properties: {
+            name: name
+        }
+    };
+
+    gj.features.push(feature);
+
+    return gj;
+}
+
+function llll2km(lat1,lon1,lat2,lon2) {
+  var R = 6371; // Radius of the earth in km
+  var dLat = deg2rad(lat2-lat1);  // deg2rad below
+  var dLon = deg2rad(lon2-lon1);
+  var a =
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLon/2) * Math.sin(dLon/2)
+    ;
+  var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  var d = R * c; // Distance in km
+  return d;
+}
+
+function deg2rad(deg) {
+  return deg * (Math.PI/180);
+}
+
+$(document).ready(function(){
+    $("#results").click(function() {
+        selectText("results");
+    });
+
+    $("#go_geocode").click(function(e) {
+        var headline = 'INPUT|latitude|longitude|' + result_fields.join('|');
+        d3.select('#results').html(headline);
+
+        var lines = $('#lede').val() ||  $('#lede').attr("placeholder");
+        lines = lines.split(/\n/);
+        LINE_COUNT = lines.length;
+
+        var bbox = false;
+        if(document.getElementById('viewbox').checked) {
+            bbox = true;
+        } else {
+            bbox = false;
+        }
+
+        for (var i = 0; i < lines.length; i++) {
+            setTimeout(function(x) {
+                return function() {
+                    geocode(lines[x], bbox);
+                };
+            }(i), 167*i);
+
+        }
+    });
+
+    d3.select('#show_imagery').on("click",function() {
+        if ( document.getElementById('show_imagery').checked ) {
+            imagery_layer.visible(true);
+        } else {
+            imagery_layer.visible(false);
+        }
+    });
+
+});
+
+
+
+//--selectText grabs the full contents of a given container on click.
+function selectText(containerid) {
+    var range;
+    if (document.selection) {
+        range = document.body.createTextRange();
+        range.moveToElementText(document.getElementById(containerid));
+        range.select();
+    } else if (window.getSelection) {
+        range = document.createRange();
+        range.selectNode(document.getElementById(containerid));
+        window.getSelection().addRange(range);
+    }
+}
+
+
+
+function copyJSON(json) {
+  return JSON.parse(JSON.stringify(json));
+}
+
+</script>
+<!--
 <script src='assets/geojson_grid.js'></script>
 <script src='assets/getData.js'></script>
-
+ -->
 
 </body>
 </html>
