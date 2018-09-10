@@ -9,6 +9,11 @@ var boundsString = '-179 18 -154 29';
 var gridSize = 1;
 */
 
+var GJ_FC_template = {
+  "type": "FeatureCollection",
+  "features": []
+};
+
 function returnGrid(boundsString, gridX, gridY) {
   gridX = parseFloat(gridX);
   gridY = parseFloat(gridY) || gridX;
@@ -95,3 +100,60 @@ function returnGJPoint(lon, lat, props) {
 
   return feature;
 }
+
+function pointGridToRectangles(gjPtCollection) {
+  //gjPtCollection = A.gjPoints;
+  var gjRectangleCollection = copyJSON(GJ_FC_template);
+
+  var xDist = Math.abs(gjPtCollection.features[0].geometry.coordinates[0] - gjPtCollection.features[1].geometry.coordinates[0]);
+  var yDist = Math.abs(gjPtCollection.features[0].geometry.coordinates[1] - gjPtCollection.features[1].geometry.coordinates[1]);
+  var gridDist = xDist || yDist;
+  gridDist = gridDist / 2;
+
+  var centerLat, centerLon, west, south, east, north, props;
+
+  gjPtCollection.features.forEach(function(v,i){
+    centerLat = v.geometry.coordinates[1];
+    centerLon = v.geometry.coordinates[0];
+    west = centerLon - gridDist;
+    east = centerLon + gridDist;
+    south = centerLat - gridDist;
+    north = centerLat + gridDist;
+    props = v.properties;
+    v = returnGJRectangle(west, south, east, north, props);
+    //console.log(v.geometry);
+    gjRectangleCollection.features.push(v);
+  });
+
+  return gjRectangleCollection;
+}
+
+function rectangleGridToPoints(gjRectangleCollection) {
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

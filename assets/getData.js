@@ -99,11 +99,23 @@ A.IDX = 0;
 function animate() {
   var si = window.setInterval(function() {
     // for each feature, update the mapped value
+    // must've bound all hourly data to the svg element onload,
+    // then just change the fill to the new function
+
+    d3.selectAll('.point_highlight')
+      .attr("fill", function(d){
+        //console.log(d);
+        return colorGradient(d.properties.data.hourly.data[A.IDX].cloudCover);
+      })
+
     A.gjPoints.features.forEach(function(v,i){
+      //console.log(A.IDX, v.properties.sun, v.properties.data.hourly.data[A.IDX].cloudCover);
+
       v.properties.sun = v.properties.data.hourly.data[A.IDX].cloudCover;
-      console.log(A.IDX, v.properties.sun);
     });
-    map.getSource('points').setData(A.gjPoints);
+
+
+    //mbgl: map.getSource('points').setData(A.gjPoints);
 
     A.IDX++;
     A.IDX = (A.IDX >= A.gjPoints.features[0].properties.data.hourly.data.length - 1) ? 0 : A.IDX + 1;

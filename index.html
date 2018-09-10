@@ -7,14 +7,38 @@
     <script src="assets/d3.v3.min.js" charset="utf-8"></script>
 
     <script src="//d3js.org/topojson.v1.min.js"></script>
+    <script src="assets/d3-time-format.v2.min.js"></script>
     <script src="assets/bounds.js"></script>
     <script src="assets/cubehelix.js"></script>
+    <script src='assets/geojson_grid.js'></script>
+    <script src='assets/getData.js'></script>
+
+
 
     <script src='assets/mapsense.js'></script>
     <link href='assets/mapsense.css' rel='stylesheet' />
     <style>
-        body { margin:0; padding:0; }
+        body { margin:0; padding:0; font: 10px sans-serif; }
         #map, #myMap { position:absolute; top:0; bottom:0; width:100%; }
+
+
+      .axis path,
+      .axis line {
+        fill: none;
+        stroke: #000;
+        shape-rendering: crispEdges;
+      }
+
+      .x.axis path {
+        display: none;
+      }
+
+      .line {
+        fill: none;
+        stroke: steelblue;
+        stroke-width: 1.5px;
+      }
+
     </style>
 </head>
 <body>
@@ -27,6 +51,8 @@
 
 <script>
 var A = {};
+A.IDX = 0;
+
 A.nowTime = Math.floor((new Date()).getTime() / 1000);
 
 A.sw = [-122.3243053,37.5640288];
@@ -110,29 +136,277 @@ var colorGradient = d3.scale.cubehelix()
         .range([d3.hsl(270, .75, .35), d3.hsl(70, 1.5, .8)]);
 colorGradient.domain([0, 1]);
 
+function updateLegend() {
+    var width = 960,
+    height = 500;
+
+  /*d3.select('svg')
+    .selectAll('.legendItems')
+    .data()
+    .enter()
+    .append('rect')
+    ;
+*/
+
+  //var color_domain = [50, 150, 350, 750, 1500];
+  var ext_color_domain = [0, 0.2, 0.4, 0.6, 0.8, 1];
+  var legend_labels = ["< 50", "50+", "150+", "350+", "750+", "> 1500"];
+  var legend_labels = ext_color_domain;
+
+/*
+  var color = d3.scale.threshold()
+  .domain(color_domain)
+  .range(["#adfcad", "#ffcb40", "#ffba00", "#ff7d73", "#ff4e40", "#ff1300"]);
+*/
+
+  var legend = d3.select('svg')
+  .selectAll("g.legend")
+  .data(ext_color_domain)
+  .enter()
+  .append("g")
+  .attr("class", "legend");
+
+  var ls_w = 20, ls_h = 20;
+
+  legend.append("rect")
+  .attr("x", 20)
+  .attr("y", function(d, i){ return height - (i*ls_h) - 2*ls_h;})
+  .attr("width", ls_w)
+  .attr("height", ls_h)
+  .style("fill", function(d, i) { return colorGradient(d); })
+  .style("opacity", 0.8);
+
+  legend.append("text")
+  .attr("x", 50)
+  .attr("y", function(d, i){ return height - (i*ls_h) - ls_h - 4;})
+  .text(function(d, i){ return legend_labels[i]; });
+
+}
+
+function updateTimeline(dat) {
+
+  var margin = {top: 20, right: 20, bottom: 30, left: 50},
+      width = 960 - margin.left - margin.right,
+      height = 500 - margin.top - margin.bottom;
+
+  var formatDate = d3.time.format("%d-%b-%y");
+  var formatDate = d3.time.format("%m-%d-%y %H:%M%p");
+/*
+d3.time.format("%Y-%m-%d")  1986-01-28
+d3.time.format("%m/%d/%Y")  01/28/1986
+d3.time.format("%H:%M") 11:39
+d3.time.format("%H:%M %p")  11:39 AM
+*/
+  var x = d3.time.scale()
+      .range([0, width]);
+
+  var y = d3.scale.linear()
+      .range([height, 0]);
+
+  var xAxis = d3.svg.axis()
+      .scale(x)
+      .orient("bottom")
+      .tickFormat(formatDate);
+
+  var yAxis = d3.svg.axis()
+      .scale(y)
+      .orient("left");
+
+  var line = d3.svg.line()
+      .x(function(d) {
+        //console.log( d.time );
+        //console.log( x(d.time) );
+        return x(d.time);
+      })
+      .y(function(d) { return y(d.cloudCover); });
+
+  //var svg = d3.select("body").append("svg")
+  var svg = d3.select("svg")
+      .attr("width", width + margin.left + margin.right)
+      .attr("height", height + margin.top + margin.bottom)
+    .append("g")
+      .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+/*
+  date  close
+  24-Apr-07 93.24
+  25-Apr-07 95.35
+  26-Apr-07 98.84
+  27-Apr-07 99.92
+
+  d3.tsv("data.tsv", type, function(error, data) {
+    if (error) throw error;
+*/
+
+  //dat = d.data.properties.data.hourly.data[0].cloudCover;
+  console.log(dat);
+  var singleHrs = dat.features[0].properties.data.hourly.data;
+//TEMP_SH = singleHrs;
+/*  singleHrs = [
+    { time: 1473750000, windSpeed: 9, temperature: 50, cloudCover: 0 },
+    { time: 1473753600, windSpeed: 9, temperature: 50, cloudCover: 1 },
+    { time: 1473757200, windSpeed: 9, temperature: 50, cloudCover: 0.6 }
+  ];
+*/
+    x.domain(d3.extent(singleHrs, function(d) {
+      //console.log(d.time); // 1473750000
+      var ret = d.time/1000;
+      var ret = d.time; // shows curve, but all labels around 01-17-1970 17:22PM
+      //var ret = d.time*1000; // shows correct tic labels, but no curve.
+      //console.log(ret); // Tue Sep 13 2016 00:00:00 GMT-0700 (PDT)
+      return ret;
+      //var formatDate = d3.time.format("%d-%b-%y");
+
+     /* var formatDate = d3.time.format("%m-%d %H:%M%p");
+      ret = formatDate(new Date(ret*1000));
+      console.log(ret);
+      return ret;*/
+    }));
+    y.domain(d3.extent(singleHrs, function(d) {
+      //console.log(d.cloudCover);
+      return +d.cloudCover;
+    }));
+
+    svg.append("g")
+        .attr("class", "x axis")
+        .attr("transform", "translate(0," + height + ")")
+        .call(xAxis)
+      .selectAll("text")
+        //.attr("y", 0)
+        //.attr("x", 9)
+        .style("text-anchor", "end")
+        .attr("dx", "-.8em")
+        .attr("dy", ".15em")
+        .attr("transform", "rotate(-45)")
+
+    svg.append("g")
+        .attr("class", "y axis")
+        .call(yAxis)
+      .append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("y", 6)
+        .attr("dy", ".71em")
+        .style("text-anchor", "end")
+        .text("cc");
+
+    svg.append("path")
+        .datum(singleHrs)
+        .attr("class", "line")
+        .attr("d", line);
+/*
+  });
+*/
+}
+/*
+function type(d) {
+  d.date = formatDate.parse(d.date);
+  d.close = +d.close;
+  return d;
+}
+*/
+
+//A.idCnt = 0;
 d3.json("assets/sfba_land_pts_64_forecast_data.geojson", function(err, data){
+  //updateLegend();
+  updateTimeline(data);
   //processData(A.gjPoints);
 
   A.gjPoints = data;
-  console.log(A.gjPoints.features);
+  A.gjRectangles = pointGridToRectangles(data);
+  //console.log(A.gjPoints.features);
 
+  A.labelData = [];
 
   A.gjLayer = mapsense.geoJson()
-      .features(A.gjPoints.features)
+      .features(A.gjRectangles.features)
       .selection(function(d){
           d.attr("class", "point_highlight")
-          .attr("r", "7")
+          d.attr("id", function(d,i){
+            //A.idCnt++;
+            //return "id-" + A.idCnt;
+            var txt_data = {
+              //"id": this.parentNode.getAttribute("id"),
+              "id": "id-" + i,
+              "data": d
+            }
+            A.labelData.push(txt_data);
+            return "id-" + i;
+          })
+          //.attr("r", "7")
+          .attr("opacity", 0.5)
           .attr("fill", function(d){
-            console.log(d);
+            //console.log(this.parentNode);
             return colorGradient(d.properties.sun);
           })
       })
+      //.on("load", load)
       ;
   map.add(A.gjLayer);
+
+  // Get all the geojson path ids and their data
+  // Select parent svg
+  // append to it some newly created
+  // textpaths (having the gj path ids + data)
+
+  d3.select(".mapsense-map")
+    .selectAll("text")
+    .data(A.labelData)
+      //console.log(this.parentNode.getAttribute("id"));
+    .enter()
+    .append("text")
+      .attr("class", "text-cc")
+      .append("textPath")
+        .attr("xlink:href", function(d,i){
+          return "#" + d.id;
+          //console.log(d,i);
+        })
+        .text(function(d,i){
+          //console.log(d);
+          return d.data.properties.data.hourly.data[0].cloudCover;
+        })
+        ;
 
   //processData2(A.gjPoints);
   //addPoints();
 });
+
+var TEMP;
+
+function load(e) {
+    console.log(e.features[0]);
+    var label = e.features[0].data.properties.data.hourly.data[0].cloudCover;
+    console.log(label);
+
+    var f = e.features[0],
+        c = f.element,
+        t = mapsense.svg("text");
+
+    TEMP = c.parentNode;
+    console.log(c.parentNode.getAttribute("style"));
+    console.log( TEMP.getAttribute('style') );
+
+    t.setAttribute("transform", c.getAttribute("transform"));
+    t.setAttribute("text-anchor", "middle");
+    t.setAttribute("y", "0.5em");
+    t.setAttribute("dy", "1.1em");
+    t.setAttribute("id", "autolabel");
+    t.setAttribute("class", "map_label");
+    t.setAttribute("paint-order", "stroke");
+
+    var tnode = document.createTextNode(label);
+    t.appendChild(tnode);
+
+    c.parentNode.insertBefore(t, c.nextSibling);
+
+/*    var text = svg.append("text")
+        .attr("x", 6)
+        .attr("dy", 15);
+
+    text.append("textPath")
+        .attr("xlink:href","#yourPathId")
+        .text("My counter text");
+*/
+}
 
 
 function processData(gj) {
